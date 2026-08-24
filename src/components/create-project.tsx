@@ -5,6 +5,7 @@ import { runClippingAgent } from "@/lib/ai";
 import { t as i18n } from "@/lib/i18n";
 import { agentClipsToClips, newDraft, useHookcut } from "@/lib/store";
 import { parseYoutubeId } from "@/lib/utils";
+import { saveSourceFile } from "@/lib/source-file";
 import { fetchYoutubeSource } from "@/lib/youtube";
 import { Button } from "./ui/button";
 import { Input, Label, Textarea } from "./ui/field";
@@ -34,6 +35,7 @@ export function CreateProject({
   const [pulling, setPulling] = useState(false);
   const [captionNote, setCaptionNote] = useState("");
   const [meta, setMeta] = useState<{ title?: string; videoId?: string; thumbnail?: string }>({});
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,6 +44,7 @@ export function CreateProject({
     setCaptionNote("");
     setTranscript("");
     setMeta({});
+    setSourceFile(null);
   }, [open, initialUrl, lang]);
 
   useEffect(() => {
@@ -108,6 +111,7 @@ export function CreateProject({
         language: capLang,
       });
       upsert(project);
+      if (sourceFile) await saveSourceFile(project.id, sourceFile);
       onClose();
       await navigate({ to: "/clip/$id", params: { id: project.id } });
 
@@ -169,6 +173,19 @@ export function CreateProject({
             />
             {pulling ? <p className="mt-2 text-xs text-subtle">{c.fetchingCaptions}</p> : null}
             {!pulling && captionNote ? <p className="mt-2 text-xs text-muted">{captionNote}</p> : null}
+          </div>
+          <div>
+            <Label htmlFor="src">{c.sourceVideo}</Label>
+            <input
+              id="src"
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime,video/*"
+              className="mt-2 block w-full text-sm text-muted file:mr-3 file:h-11 file:rounded-md file:border-0 file:bg-raised file:px-3 file:text-sm file:text-fg"
+              onChange={(e) => setSourceFile(e.target.files?.[0] ?? null)}
+            />
+            <p className="mt-2 text-xs text-subtle">
+              {sourceFile ? sourceFile.name : c.sourceVideoHint}
+            </p>
           </div>
           <div>
             <Label htmlFor="tr">{c.transcriptLabel}</Label>
