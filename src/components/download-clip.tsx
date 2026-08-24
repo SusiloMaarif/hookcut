@@ -135,6 +135,13 @@ export function DownloadClip({
           {c.downloadVideo}
         </h2>
         <p className="mt-1 text-sm text-muted">{c.downloadHint}</p>
+        {!file ? (
+          <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm text-fg">
+            <li>{c.howDl1}</li>
+            <li>{c.howDl2}</li>
+            <li>{c.howDl3}</li>
+          </ol>
+        ) : null}
         <p className="mt-3 text-sm text-fg">
           {clip.title}
           <span className="ml-2 text-subtle tabular-nums">
@@ -216,6 +223,21 @@ export function DownloadClip({
         ) : null}
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          {watch ? (
+            <a
+              href="https://cobalt.tools/"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 items-center justify-center rounded-md px-4 text-sm text-muted hover:text-fg"
+              onClick={() => {
+                if (project.sourceUrl) {
+                  void navigator.clipboard.writeText(project.sourceUrl).catch(() => {});
+                }
+              }}
+            >
+              {c.openDownloader}
+            </a>
+          ) : null}
           {watch ? (
             <a
               href={watch}
