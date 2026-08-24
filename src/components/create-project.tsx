@@ -217,6 +217,7 @@ export function CreateProject({
               />
             </div>
           </div>
+          <p className="text-xs text-subtle">{c.clipLengthHint}</p>
         </div>
 
         <div className="mt-6 flex justify-end gap-2">

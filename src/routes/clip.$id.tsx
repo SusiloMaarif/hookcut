@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Download, Pause, Play } from "lucide-react";
 import { toast } from "sonner";
 import { PhonePreview, StylePicker } from "@/components/phone-preview";
+import { DownloadClip } from "@/components/download-clip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { rewriteClipCopy, runClippingAgent } from "@/lib/ai";
@@ -10,7 +11,7 @@ import { clipPack, clipToSrt } from "@/lib/export";
 import { t as i18n } from "@/lib/i18n";
 import { agentClipsToClips, useHookcut } from "@/lib/store";
 import type { Aspect, Project } from "@/lib/types";
-import { cn, downloadText, formatTime } from "@/lib/utils";
+import { cn, downloadText, formatClipLength, formatTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/clip/$id")({ component: EditorPage });
 
@@ -45,6 +46,7 @@ function Editor({ project }: { project: Project }) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [dlOpen, setDlOpen] = useState(false);
 
   useEffect(() => {
     if (project.clips.length && !project.clips.some((x) => x.id === activeId)) {
@@ -218,7 +220,8 @@ function Editor({ project }: { project: Project }) {
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm font-medium leading-snug">{item.title}</p>
                   <p className="mt-1 text-xs text-subtle tabular-nums">
-                    {formatTime(item.startSec)}–{formatTime(item.endSec)}
+                    {formatTime(item.startSec)}–{formatTime(item.endSec)} ·{" "}
+                    {formatClipLength(item.endSec - item.startSec, lang)}
                   </p>
                 </button>
               ))
@@ -303,7 +306,12 @@ function Editor({ project }: { project: Project }) {
                 <p className="mt-1 text-sm text-muted">{clip.hashtags.join(" ")}</p>
               </div>
               <div className="flex flex-col gap-2">
+                <Button onClick={() => setDlOpen(true)}>
+                  <Download className="size-4" strokeWidth={1.75} />
+                  {c.downloadVideo}
+                </Button>
                 <Button
+                  variant="outline"
                   onClick={async () => {
                     await navigator.clipboard.writeText(clipPack(project, clip));
                     toast(c.copied);
@@ -343,6 +351,14 @@ function Editor({ project }: { project: Project }) {
           )}
         </aside>
       </div>
+      {dlOpen && clip ? (
+        <DownloadClip
+          project={project}
+          clip={clip}
+          onClose={() => setDlOpen(false)}
+          onPatchClip={(patch) => patchClip(project.id, clip.id, patch)}
+        />
+      ) : null}
     </div>
   );
 }
