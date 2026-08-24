@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { t as i18n } from "@/lib/i18n";
+import { fetchClipFromWorker, getWorkerUrl, setWorkerUrl } from "@/lib/clip-worker";
 import { renderClipVideo } from "@/lib/render-clip";
 import { getSourceFile, saveSourceFile } from "@/lib/source-file";
 import type { Clip, Project } from "@/lib/types";
@@ -27,13 +28,19 @@ export function DownloadClip({
   const abortRef = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "fetch" | "cut">("idle");
   const [ratio, setRatio] = useState(0);
   const [startText, setStartText] = useState(formatTime(clip.startSec));
   const [endText, setEndText] = useState(formatTime(clip.endSec));
+  const [workerText, setWorkerText] = useState("");
 
   const lengthSec = Math.max(1, clip.endSec - clip.startSec);
+  const youtubeUrl =
+    project.sourceUrl ||
+    (project.videoId ? `https://www.youtube.com/watch?v=${project.videoId}` : "");
 
   useEffect(() => {
+    setWorkerText(getWorkerUrl());
     let cancelled = false;
     void getSourceFile(project.id).then((saved) => {
       if (!cancelled && saved) setFile(saved);
@@ -73,18 +80,22 @@ export function DownloadClip({
     });
   }
 
-  async function renderWith(source: File) {
+  async function renderWith(source: File, alreadyCut = false) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     setBusy(true);
+    setPhase("cut");
     setRatio(0);
+    const renderClip = alreadyCut
+      ? { ...clip, startSec: 0, endSec: Math.max(1, clip.endSec - clip.startSec) }
+      : clip;
     try {
       const result = await renderClipVideo({
         file: source,
-        clip,
+        clip: renderClip,
         aspect: project.aspect,
         style: project.captionStyle,
         canvas,
@@ -99,11 +110,40 @@ export function DownloadClip({
       toast(c.renderFail);
     } finally {
       setBusy(false);
+      setPhase("idle");
     }
   }
 
   async function run() {
     let source = file;
+    const worker = workerText.trim().replace(/\/$/, "") || getWorkerUrl();
+    if (worker) setWorkerUrl(worker);
+
+    if (!source && worker && youtubeUrl) {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
+      setBusy(true);
+      setPhase("fetch");
+      setRatio(0);
+      try {
+        source = await fetchClipFromWorker({
+          workerUrl: worker,
+          url: youtubeUrl,
+          startSec: clip.startSec,
+          endSec: clip.endSec,
+          signal: ac.signal,
+        });
+        await renderWith(source, true);
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        toast(c.workerFail);
+        setBusy(false);
+        setPhase("idle");
+      }
+    }
+
     if (!source) {
       const picked = await pickSource();
       if (!picked) return;
@@ -117,6 +157,7 @@ export function DownloadClip({
   const watch =
     project.videoId &&
     `https://www.youtube.com/watch?v=${project.videoId}&t=${Math.floor(clip.startSec)}s`;
+  const hasWorker = Boolean(workerText.trim() || getWorkerUrl());
 
   return (
     <div
@@ -134,8 +175,8 @@ export function DownloadClip({
         <h2 id="dl-title" className="font-display text-2xl">
           {c.downloadVideo}
         </h2>
-        <p className="mt-1 text-sm text-muted">{c.downloadHint}</p>
-        {!file ? (
+        <p className="mt-1 text-sm text-muted">{hasWorker ? c.downloadHint : c.workerHint}</p>
+        {!file && !hasWorker ? (
           <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm text-fg">
             <li>{c.howDl1}</li>
             <li>{c.howDl2}</li>
@@ -174,6 +215,19 @@ export function DownloadClip({
           </div>
         </div>
         <p className="mt-2 text-xs text-subtle">{c.clipLengthHint}</p>
+
+        <div className="mt-4">
+          <Label htmlFor="worker">{c.workerUrl}</Label>
+          <Input
+            id="worker"
+            value={workerText}
+            onChange={(e) => setWorkerText(e.target.value)}
+            onBlur={() => setWorkerUrl(workerText)}
+            placeholder={c.workerUrlPh}
+            disabled={busy}
+            spellCheck={false}
+          />
+        </div>
 
         <input
           ref={inputRef}
@@ -217,27 +271,12 @@ export function DownloadClip({
               <div className="h-full bg-fg transition-[width] duration-150" style={{ width: `${Math.round(ratio * 100)}%` }} />
             </div>
             <p className="mt-2 text-xs text-subtle">
-              {c.rendering} {Math.round(ratio * 100)}%
+              {phase === "fetch" ? c.fetchingYoutube : c.rendering} {Math.round(ratio * 100)}%
             </p>
           </div>
         ) : null}
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          {watch ? (
-            <a
-              href="https://cobalt.tools/"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-11 items-center justify-center rounded-md px-4 text-sm text-muted hover:text-fg"
-              onClick={() => {
-                if (project.sourceUrl) {
-                  void navigator.clipboard.writeText(project.sourceUrl).catch(() => {});
-                }
-              }}
-            >
-              {c.openDownloader}
-            </a>
-          ) : null}
           {watch ? (
             <a
               href={watch}
@@ -253,7 +292,7 @@ export function DownloadClip({
           </Button>
           <Button onClick={() => void run()} disabled={busy}>
             <Download className="size-4" strokeWidth={1.75} />
-            {busy ? c.rendering : c.downloadClip}
+            {busy ? (phase === "fetch" ? c.fetchingYoutube : c.rendering) : c.downloadClip}
           </Button>
         </div>
       </div>

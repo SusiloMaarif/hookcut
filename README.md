@@ -34,6 +34,17 @@ The Madefaka key is baked into the **server** function at build (never the brows
 
 Keep this repository **private**. This app does **not** need a database.
 
+## Direct clip download (Railway)
+
+Vercel cannot fetch YouTube video files. The clip worker (`Dockerfile` + `worker/server.mjs`) runs on Railway:
+
+1. [New project from GitHub](https://railway.app/new) → repo **hookcut**
+2. Wait for the deploy, then **Settings → Networking → Generate Domain**
+3. Paste that URL into Hookcut’s download dialog (once)
+
+Optional Railway env: `YTDLP_COOKIES` (Netscape cookies.txt) if YouTube blocks the server IP.
+
+
 ## Flow
 
 1. Studio → paste YouTube URL → **Get clips**
