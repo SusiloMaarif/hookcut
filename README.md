@@ -16,6 +16,29 @@ npm run dev
 
 App listens on `0.0.0.0:8080`.
 
+## Deploy to Vercel
+
+Repo: [SusiloMaarif/hookcut](https://github.com/SusiloMaarif/hookcut) (private).
+
+1. Open [vercel.com/new](https://vercel.com/new)
+2. Import **SusiloMaarif/hookcut** (connect GitHub if asked)
+3. Framework preset: **TanStack Start** (already set in `vercel.json`)
+4. **Do not** override Output Directory
+5. Add environment variables (Production + Preview):
+
+| Name | Value |
+|---|---|
+| `MADEFAKA_API_KEY` | your Madefaka key (never `VITE_` prefix) |
+| `MADEFAKA_BASE_URL` | `https://madefaka.my.id/v1` |
+| `MADEFAKA_MODEL` | `deepseek-v4-flash:free` |
+| `VITE_AUTH_ENABLED` | `false` |
+
+6. Deploy
+
+After the first deploy, add the same env vars and **redeploy** if the agent says AI is unavailable.
+
+This app does **not** need a database. Leave `DATABASE_URL` empty.
+
 ## Flow
 
 1. Studio → paste YouTube URL → **Get clips**
@@ -24,6 +47,8 @@ App listens on `0.0.0.0:8080`.
 4. Editor: 9:16 preview (YouTube source + burned captions), copy pack, download SRT, queue
 
 This is **not** a pixel-perfect Vugola clone. Vugola re-encodes MP4 and auto-posts to TikTok. Hookcut is the director + caption studio. You still post.
+
+YouTube caption scrape can fail from some cloud IPs (including Vercel). If it does, paste a transcript in the dialog.
 
 ## Models (Madefaka `/v1/models`)
 
@@ -37,4 +62,4 @@ Set `MADEFAKA_MODEL` to switch.
 
 ## Security
 
-Never commit API keys. The key that was pasted in chat should be rotated if this repo is ever made public.
+Never commit API keys. Put them in Vercel env / local `.env` only.
