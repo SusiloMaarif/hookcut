@@ -60,19 +60,20 @@ export function DownloadClip({
     onPatchClip({ startSec: start, endSec: Math.max(start + 8, end) });
   }
 
-  async function onPick(list: FileList | null) {
-    const next = list?.[0];
-    if (!next) return;
-    setFile(next);
-    await saveSourceFile(project.id, next);
+  function pickSource(): Promise<File | null> {
+    const input = inputRef.current;
+    if (!input) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const onChange = () => {
+        input.removeEventListener("change", onChange);
+        resolve(input.files?.[0] ?? null);
+      };
+      input.addEventListener("change", onChange, { once: true });
+      input.click();
+    });
   }
 
-  async function run() {
-    if (!file) {
-      toast(c.needVideoFile);
-      inputRef.current?.click();
-      return;
-    }
+  async function renderWith(source: File) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     abortRef.current?.abort();
@@ -82,7 +83,7 @@ export function DownloadClip({
     setRatio(0);
     try {
       const result = await renderClipVideo({
-        file,
+        file: source,
         clip,
         aspect: project.aspect,
         style: project.captionStyle,
@@ -99,6 +100,18 @@ export function DownloadClip({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function run() {
+    let source = file;
+    if (!source) {
+      const picked = await pickSource();
+      if (!picked) return;
+      setFile(picked);
+      await saveSourceFile(project.id, picked);
+      source = picked;
+    }
+    await renderWith(source);
   }
 
   const watch =
@@ -160,21 +173,26 @@ export function DownloadClip({
           type="file"
           accept="video/mp4,video/webm,video/quicktime,video/*"
           className="sr-only"
-          onChange={(e) => void onPick(e.target.files)}
         />
 
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={busy}
-          className="mt-4 flex min-h-11 w-full items-center gap-3 rounded-md bg-raised px-3 py-3 text-left shadow-[var(--shadow-border)]"
-        >
-          <FolderOpen className="size-4 shrink-0 text-muted" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 truncate text-sm">
-            {file ? file.name : c.dropFile}
-          </span>
-          <span className="text-xs text-subtle">{file ? c.replaceSource : c.uploadSource}</span>
-        </button>
+        {file ? (
+          <button
+            type="button"
+            onClick={() => {
+              void pickSource().then(async (picked) => {
+                if (!picked) return;
+                setFile(picked);
+                await saveSourceFile(project.id, picked);
+              });
+            }}
+            disabled={busy}
+            className="mt-4 flex min-h-11 w-full items-center gap-3 rounded-md bg-raised px-3 py-3 text-left shadow-[var(--shadow-border)]"
+          >
+            <FolderOpen className="size-4 shrink-0 text-muted" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
+            <span className="text-xs text-subtle">{c.replaceSource}</span>
+          </button>
+        ) : null}
 
         <div className="mt-4 flex justify-center">
           <canvas
