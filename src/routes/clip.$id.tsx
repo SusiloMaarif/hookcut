@@ -5,10 +5,10 @@ import { toast } from "sonner";
 import { PhonePreview, StylePicker } from "@/components/phone-preview";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { rewriteClipCopy } from "@/lib/ai";
+import { rewriteClipCopy, runClippingAgent } from "@/lib/ai";
 import { clipPack, clipToSrt } from "@/lib/export";
 import { t as i18n } from "@/lib/i18n";
-import { useHookcut } from "@/lib/store";
+import { agentClipsToClips, useHookcut } from "@/lib/store";
 import type { Aspect, Project } from "@/lib/types";
 import { cn, downloadText, formatTime } from "@/lib/utils";
 
@@ -90,6 +90,36 @@ function Editor({ project }: { project: Project }) {
     });
   }, [project.id, clip?.startSec]);
 
+  async function retryAgent() {
+    setBusy(true);
+    patchProject(project.id, { status: "running", error: undefined });
+    try {
+      const result = await runClippingAgent({
+        data: {
+          title: project.title,
+          durationSec: project.durationSec,
+          transcript: project.transcript,
+          language: project.language,
+          clipCount: 5,
+        },
+      });
+      if (!result.ok) {
+        const msg = result.error === "unavailable" ? c.aiDown : c.aiErr;
+        patchProject(project.id, { status: "draft", error: msg });
+        toast(msg);
+        return;
+      }
+      const clips = agentClipsToClips(result.clips, result.estimated);
+      patchProject(project.id, { status: "ready", clips, error: undefined });
+      setActiveId(clips[0]?.id);
+    } catch {
+      patchProject(project.id, { status: "draft", error: c.aiErr });
+      toast(c.aiErr);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function rewrite() {
     if (!clip) return;
     setBusy(true);
@@ -146,8 +176,17 @@ function Editor({ project }: { project: Project }) {
         </div>
       </header>
 
-      {project.error ? (
-        <p className="border-b border-border bg-raised px-4 py-3 text-sm text-muted">{project.error}</p>
+      {project.error || project.clips.length === 0 ? (
+        <div className="flex flex-wrap items-center gap-3 border-b border-border bg-raised px-4 py-3">
+          <p className="min-w-0 flex-1 text-sm text-muted">{project.error || c.noClips}</p>
+          <Button
+            type="button"
+            onClick={() => void retryAgent()}
+            disabled={busy || project.status === "running"}
+          >
+            {busy || project.status === "running" ? c.running : c.retryAgent}
+          </Button>
+        </div>
       ) : null}
 
       <div className="mx-auto grid max-w-7xl gap-6 px-3 py-5 pb-20 lg:grid-cols-12 sm:px-5">

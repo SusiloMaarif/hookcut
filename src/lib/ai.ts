@@ -9,17 +9,21 @@ type AgentInput = {
   clipCount: number;
 };
 
+function env(name: string) {
+  return typeof process === "undefined" ? undefined : process.env[name];
+}
+
 function llmConfig() {
-  const madefaka = process.env.MADEFAKA_API_KEY;
+  const madefaka = env("MADEFAKA_API_KEY");
   if (madefaka) {
     return {
       apiKey: madefaka,
-      baseUrl: (process.env.MADEFAKA_BASE_URL || "https://madefaka.my.id/v1").replace(/\/$/, ""),
-      model: process.env.MADEFAKA_MODEL || "deepseek-v4-flash:free",
+      baseUrl: (env("MADEFAKA_BASE_URL") || "https://madefaka.my.id/v1").replace(/\/$/, ""),
+      model: env("MADEFAKA_MODEL") || "deepseek-v4-flash:free",
       fallbackModel: "mimo-v2.5:free",
     };
   }
-  const xai = process.env.XAI_API_KEY;
+  const xai = env("XAI_API_KEY");
   if (xai) {
     return {
       apiKey: xai,
@@ -56,32 +60,36 @@ async function complete(
   maxTokens: number,
 ) {
   const models = [cfg.model, cfg.fallbackModel].filter(Boolean) as string[];
-  let lastError = "unavailable";
+  let lastError = "empty";
   for (const model of models) {
-    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature: 0.5,
-        response_format: { type: "json_object" },
-      }),
-    });
-    if (!res.ok) {
-      lastError = `API error ${res.status}`;
-      continue;
+    try {
+      const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: maxTokens,
+          temperature: 0.5,
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (!res.ok) {
+        lastError = `API error ${res.status}`;
+        continue;
+      }
+      const body = (await res.json()) as {
+        choices?: { message?: { content?: string | null; reasoning_content?: string } }[];
+      };
+      const text = messageText(body);
+      if (text) return { ok: true as const, text };
+      lastError = "empty";
+    } catch {
+      lastError = "network";
     }
-    const body = (await res.json()) as {
-      choices?: { message?: { content?: string | null; reasoning_content?: string } }[];
-    };
-    const text = messageText(body);
-    if (text) return { ok: true as const, text };
-    lastError = "empty";
   }
   return { ok: false as const, error: lastError };
 }
