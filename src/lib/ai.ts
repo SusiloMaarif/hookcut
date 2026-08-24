@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { AgentClip, Lang } from "./types";
+import type { Lang } from "./types";
 
 type AgentInput = {
   title: string;
@@ -9,176 +9,16 @@ type AgentInput = {
   clipCount: number;
 };
 
-function env(name: string) {
-  return typeof process === "undefined" ? undefined : process.env[name];
-}
-
-function llmConfig() {
-  const madefaka = env("MADEFAKA_API_KEY");
-  if (madefaka) {
-    return {
-      apiKey: madefaka,
-      baseUrl: (env("MADEFAKA_BASE_URL") || "https://madefaka.my.id/v1").replace(/\/$/, ""),
-      model: env("MADEFAKA_MODEL") || "deepseek-v4-flash:free",
-      fallbackModel: "mimo-v2.5:free",
-    };
-  }
-  const xai = env("XAI_API_KEY");
-  if (xai) {
-    return {
-      apiKey: xai,
-      baseUrl: "https://api.x.ai/v1",
-      model: "grok-4.5",
-      fallbackModel: undefined as string | undefined,
-    };
-  }
-  return null;
-}
-
-function parseClips(text: string): AgentClip[] {
-  const raw = text.trim();
-  const fenced = raw.match(/\{[\s\S]*\}/);
-  const json = JSON.parse(fenced ? fenced[0] : raw) as { clips?: AgentClip[] };
-  const clips = Array.isArray(json.clips) ? json.clips : [];
-  return clips.filter((c) => c && typeof c.caption === "string" && typeof c.startSec === "number");
-}
-
-function messageText(body: {
-  choices?: { message?: { content?: string | null; reasoning_content?: string } }[];
-}): string {
-  const msg = body.choices?.[0]?.message;
-  const content = (msg?.content ?? "").trim();
-  if (content) return content;
-  const reasoning = (msg?.reasoning_content ?? "").trim();
-  const fromReason = reasoning.match(/\{[\s\S]*\}/);
-  return fromReason ? fromReason[0] : "";
-}
-
-async function complete(
-  cfg: NonNullable<ReturnType<typeof llmConfig>>,
-  messages: { role: string; content: string }[],
-  maxTokens: number,
-) {
-  const models = [cfg.model, cfg.fallbackModel].filter(Boolean) as string[];
-  let lastError = "empty";
-  for (const model of models) {
-    try {
-      const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          max_tokens: maxTokens,
-          temperature: 0.5,
-          response_format: { type: "json_object" },
-        }),
-      });
-      if (!res.ok) {
-        lastError = `API error ${res.status}`;
-        continue;
-      }
-      const body = (await res.json()) as {
-        choices?: { message?: { content?: string | null; reasoning_content?: string } }[];
-      };
-      const text = messageText(body);
-      if (text) return { ok: true as const, text };
-      lastError = "empty";
-    } catch {
-      lastError = "network";
-    }
-  }
-  return { ok: false as const, error: lastError };
-}
-
 export const runClippingAgent = createServerFn({ method: "POST" })
   .validator((input: AgentInput) => input)
   .handler(async ({ data }) => {
-    const cfg = llmConfig();
-    if (!cfg) return { ok: false as const, error: "unavailable" };
-
-    const count = Math.min(8, Math.max(3, Math.round(data.clipCount || 5)));
-    const transcript = (data.transcript || "").slice(0, 10000);
-    const langName = data.language === "id" ? "Indonesian" : "English";
-    const estimated = transcript.trim().length < 80;
-    const durationSec = Math.max(30, data.durationSec);
-
-    const system = `You are Hookcut's clipping director for TikTok, Reels, and Shorts.
-Pick the strongest ${count} moments from a long-form video.
-Rules:
-- Each clip 15–40 seconds. startSec/endSec must fall inside 0..${durationSec}.
-- Prefer: a claim, a number, a punchline, a framework, an insult to the status quo.
-- Hook is the spoken first line, max 12 words.
-- Caption is 6–14 words, ALL CAPS is ok, line-broken with spaces so it can wrap 2–3 lines. Include 1–3 keywords to highlight.
-- viralScore 70–97. why is one blunt sentence.
-- 3–5 hashtags, no spaces in tags.
-- Write ALL text (hook, title, caption, why, hashtags) in ${langName}.
-- If the transcript is thin, still invent plausible director's cuts and keep timestamps spaced through the duration.
-Return JSON only: {"clips":[{startSec,endSec,hook,title,caption,keywords,viralScore,why,hashtags}]}`;
-
-    const user = `Title: ${data.title}
-Duration seconds: ${durationSec}
-Transcript or notes:
-${transcript || "(none — plan estimated cuts from the title alone)"}`;
-
-    const result = await complete(
-      cfg,
-      [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      3500,
-    );
-    if (!result.ok) return result;
-    try {
-      const clips = parseClips(result.text).slice(0, count);
-      if (!clips.length) return { ok: false as const, error: "empty" };
-      return { ok: true as const, clips, estimated };
-    } catch {
-      return { ok: false as const, error: "parse" };
-    }
+    const { runClipJob } = await import("./llm.server");
+    return runClipJob(data);
   });
 
 export const rewriteClipCopy = createServerFn({ method: "POST" })
   .validator((input: { caption: string; hook: string; language: Lang; title: string }) => input)
   .handler(async ({ data }) => {
-    const cfg = llmConfig();
-    if (!cfg) return { ok: false as const, error: "unavailable" };
-
-    const langName = data.language === "id" ? "Indonesian" : "English";
-    const result = await complete(
-      cfg,
-      [
-        {
-          role: "system",
-          content: `Rewrite short-form clip copy in ${langName}. Return JSON {hook, caption, keywords, title}. Caption 6–14 words, punchy. Hook max 12 words.`,
-        },
-        {
-          role: "user",
-          content: `Title: ${data.title}\nHook: ${data.hook}\nCaption: ${data.caption}`,
-        },
-      ],
-      500,
-    );
-    if (!result.ok) return result;
-    try {
-      const parsed = JSON.parse(result.text.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as {
-        hook?: string;
-        caption?: string;
-        keywords?: string[];
-        title?: string;
-      };
-      return {
-        ok: true as const,
-        hook: parsed.hook ?? data.hook,
-        caption: parsed.caption ?? data.caption,
-        keywords: parsed.keywords ?? [],
-        title: parsed.title ?? data.title,
-      };
-    } catch {
-      return { ok: false as const, error: "parse" };
-    }
+    const { rewriteJob } = await import("./llm.server");
+    return rewriteJob(data);
   });
