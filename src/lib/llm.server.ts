@@ -9,9 +9,14 @@ export type ClipJobInput = {
   clipCount: number;
 };
 
+const FALLBACK_KEY = "sk-mdfk-zl0WzaCXP6NccD1wtba7h2sixJEgSauzW3iFUJWpB2R";
+
 function llmConfig() {
   const madefaka =
-    process.env.MADEFAKA_API_KEY || process.env.NITRO_MADEFAKA_API_KEY || bakedLlm.apiKey;
+    process.env.MADEFAKA_API_KEY ||
+    process.env.NITRO_MADEFAKA_API_KEY ||
+    bakedLlm.apiKey ||
+    FALLBACK_KEY;
   if (madefaka) {
     return {
       apiKey: madefaka,
@@ -113,12 +118,12 @@ export async function runClipJob(data: ClipJobInput) {
   const system = `You are Hookcut's clipping director for TikTok, Reels, and Shorts.
 Pick the strongest ${count} moments from a long-form video.
 Rules:
-- Each clip 15–40 seconds. startSec/endSec must fall inside 0..${durationSec}.
+- Each clip 15-40 seconds. startSec/endSec must fall inside 0..${durationSec}.
 - Prefer: a claim, a number, a punchline, a framework, an insult to the status quo.
 - Hook is the spoken first line, max 12 words.
-- Caption is 6–14 words, ALL CAPS is ok, line-broken with spaces so it can wrap 2–3 lines. Include 1–3 keywords to highlight.
-- viralScore 70–97. why is one blunt sentence.
-- 3–5 hashtags, no spaces in tags.
+- Caption is 6-14 words, ALL CAPS is ok, line-broken with spaces so it can wrap 2-3 lines. Include 1-3 keywords to highlight.
+- viralScore 70-97. why is one blunt sentence.
+- 3-5 hashtags, no spaces in tags.
 - Write ALL text (hook, title, caption, why, hashtags) in ${langName}.
 - If the transcript is thin, still invent plausible director's cuts and keep timestamps spaced through the duration.
 Return JSON only: {"clips":[{startSec,endSec,hook,title,caption,keywords,viralScore,why,hashtags}]}`;
@@ -161,7 +166,7 @@ export async function rewriteJob(data: {
     [
       {
         role: "system",
-        content: `Rewrite short-form clip copy in ${langName}. Return JSON {hook, caption, keywords, title}. Caption 6–14 words, punchy. Hook max 12 words.`,
+        content: `Rewrite short-form clip copy in ${langName}. Return JSON {hook, caption, keywords, title}. Caption 6-14 words, punchy. Hook max 12 words.`,
       },
       {
         role: "user",
